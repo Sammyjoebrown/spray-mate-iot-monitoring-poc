@@ -1,0 +1,197 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Farm {
+  id       String @id @default(cuid())
+  name     String
+  timezone String
+
+  blocks           Block[]
+  weatherSnapshots WeatherSnapshot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Block {
+  id      String  @id @default(cuid())
+  farmId  String
+  name    String
+  areaHa  Decimal
+  polygon String  // GeoJSON stored as string
+
+  farm          Farm           @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  sprayJobs     SprayJob[]
+  sensorDevices SensorDevice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ChemicalProduct {
+  id               String  @id @default(cuid())
+  name             String  @unique
+  formulation      String  // EC, WG, SC, etc.
+  concentrationPct Decimal
+  unit             String  // L or kg
+  densityKgPerL    Decimal?
+  label            String  // JSON stored as string
+
+  inventoryLots InventoryLot[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InventoryLot {
+  id          String  @id @default(cuid())
+  productId   String
+  batch       String
+  openingQty  Decimal
+  qtyUnit     String
+  receivedQty Decimal @default(0)
+  adjustments Decimal @default(0)
+
+  product ChemicalProduct @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([productId])
+}
+
+model TankMix {
+  id               String  @id @default(cuid())
+  name             String  @unique
+  lines            String  // JSON array of mix lines
+  waterRatePerHaL  Decimal
+
+  sprayJobs SprayJob[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SprayJob {
+  id                 String   @id @default(cuid())
+  blockId            String
+  tankMixId          String
+  operator           String
+  plannedStart       DateTime
+  plannedWindKph     Decimal
+  plannedWindDirDeg  Int
+  plannedTempC       Decimal
+  plannedRH          Int
+  plannedBoomWidthM  Decimal
+  plannedSpeedKph    Decimal
+
+  block Block   @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  mix   TankMix @relation(fields: [tankMixId], references: [id], onDelete: Restrict)
+
+  applicationEvents SprayApplicationEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([blockId])
+  @@index([tankMixId])
+}
+
+model SprayApplicationEvent {
+  id                String   @id @default(cuid())
+  jobId             String
+  actualStart       DateTime
+  actualEnd         DateTime
+  actualWindKph     Decimal
+  actualWindDirDeg  Int
+  actualTempC       Decimal
+  actualRH          Int
+  areaTreatedHa     Decimal
+  nozzleClass       String
+  outcome           String   // completed or aborted
+  notes             String?
+
+  job SprayJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([jobId])
+}
+
+model SensorDevice {
+  id         String   @id @default(cuid())
+  blockId    String?
+  type       String   // wind, humidity, nozzle, driftSampler
+  status     String   // active, inactive, offline
+  pose       String   // JSON {lat, lng}
+  deployedAt DateTime?
+
+  block    Block?          @relation(fields: [blockId], references: [id], onDelete: SetNull)
+  readings SensorReading[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([blockId])
+}
+
+model SensorReading {
+  id       String   @id @default(cuid())
+  deviceId String
+  ts       DateTime
+  payload  String   // JSON payload
+
+  device SensorDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([deviceId])
+  @@index([ts])
+}
+
+model WeatherSnapshot {
+  id          String   @id @default(cuid())
+  farmId      String
+  ts          DateTime
+  windKph     Decimal
+  windDirDeg  Int
+  tempC       Decimal
+  rhPct       Int
+
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([farmId])
+  @@index([ts])
+}
+
+model StockTake {
+  id              String   @id @default(cuid())
+  atEndOfDayDate  DateTime @unique
+  computedLines   String   // JSON array of stock lines
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SeasonalActiveIngredient {
+  id        String  @id @default(cuid())
+  blockId   String
+  productId String
+  aiGrams   Decimal
+  season    String  // e.g., "2024-25"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([blockId, productId, season])
+  @@index([blockId])
+}
